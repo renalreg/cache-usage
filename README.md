@@ -10,6 +10,20 @@ Run with `--help` for the list of available columns.
 
 ## Usage
 
+All databases:
+
+```
+cache-usage
+```
+
+Specific databases:
+
+```
+cache-usage /opt/hs/mgr/user/
+```
+
+For more options see `--help`:
+
 ```
 cache-usage --help
 ```
