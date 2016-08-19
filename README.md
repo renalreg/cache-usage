@@ -22,5 +22,5 @@ alias cache-usage='LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/hs/bin scl enable pytho
 
 RHEL 6 has Python 2.6 installed by default to we use `scl` to run the script with Python 2.7.
 The `LD_LIBRARY_PATH` is updated so `libcbind.so` is on the path.
-The `--username` and `--password` are provided for convenience.
+The `--username` and `--password` arguments are provided for convenience.
 The alias assumes the `cache-usage` command is in the PATH (e.g. `/usr/local/bin`).
