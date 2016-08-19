@@ -1,0 +1,260 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+from __future__ import division
+
+import argparse
+import intersys.pythonbind
+
+COLUMN_HEADERS = {
+    'directory': 'Directory',
+    'block_size': 'Block Size',
+    'size': 'Size',
+    'max_size': 'Max Size',
+    'free': 'Free',
+    'free_blocks': 'Free Blocks',
+    'free_percent': 'Free %',
+    'used': 'Used',
+    'used_percent': 'Used %',
+    'mounted': 'Mounted',
+    'read_only': 'Read Only',
+}
+LEFT_COLUMNS = ['directory']
+DEFAULT_COLUMNS = ['directory', 'used', 'used_percent', 'size']
+
+
+def yn(value):
+    if value:
+        return 'Y'
+    else:
+        return 'N'
+
+
+def percent(value):
+    return '{0:.2f}%'.format(value)
+
+
+def unit(value, unit):
+    return '{0}{1}'.format(value, unit)
+
+
+def mb(value):
+    return unit(value, 'MB')
+
+
+def kb(value):
+    return unit(value, 'KB')
+
+
+def list_databases(cache):
+    """
+    Get a list of Cache database directories.
+    """
+
+    query = intersys.pythonbind.query(cache)
+    query.prepare_class('SYS.Database', 'CompactLocalList')
+    query.execute()
+
+    while True:
+        row = query.fetch([None])
+
+        if not row:
+            break
+
+        yield row[0]
+
+
+class Database(object):
+    def __init__(self, cache, directory):
+        self.instance = cache.openid('SYS.Database', directory, -1, -1)
+
+    @property
+    def directory(self):
+        return self.instance.get('Directory')
+
+    @property
+    def block_size(self):
+        return self.instance.get('BlockSize')
+
+    @property
+    def size(self):
+        return self.instance.get('Size')
+
+    @property
+    def max_size(self):
+        return self.instance.get('MaxSize')
+
+    @property
+    def free(self):
+        args = [self.directory, None, None]
+        self.instance.run_obj_method('GetFreeSpace', args)
+        return args[1]
+
+    @property
+    def free_blocks(self):
+        args = [self.directory, None, None]
+        self.instance.run_obj_method('GetFreeSpace', args)
+        return args[2]
+
+    @property
+    def free_percent(self):
+        return 100 * self.free / self.size
+
+    @property
+    def used(self):
+        return self.size - self.free
+
+    @property
+    def used_percent(self):
+        return 100 * self.used / self.size
+
+    @property
+    def mounted(self):
+        return self.instance.get('Mounted')
+
+    @property
+    def read_only(self):
+        return self.instance.get('ReadOnly')
+
+
+class DatabaseProxy(object):
+    """
+    Proxy a Database object to return human-readable output.
+    """
+
+    def __init__(self, instance):
+        self.instance = instance
+
+    def __getattr__(self, name):
+        return getattr(self.instance, name)
+
+    @property
+    def block_size(self):
+        return kb(self.instance.block_size)
+
+    @property
+    def size(self):
+        return mb(self.instance.size)
+
+    @property
+    def max_size(self):
+        value = self.instance.max_size
+
+        if value == 0:
+            return 'Unlimited'
+        else:
+            return mb(value)
+
+    @property
+    def free(self):
+        return mb(self.instance.free)
+
+    @property
+    def free_percent(self):
+        return percent(self.instance.free_percent)
+
+    @property
+    def used(self):
+        return mb(self.instance.used)
+
+    @property
+    def used_percent(self):
+        return percent(self.instance.used_percent)
+
+    @property
+    def mounted(self):
+        return yn(self.instance.mounted)
+
+    @property
+    def read_only(self):
+        return yn(self.instance.read_only)
+
+
+def parse_columns(value):
+    names = value.split(',')
+    names = [x.strip() for x in names]
+
+    for name in names:
+        if name not in COLUMN_HEADERS:
+            raise argparse.ArgumentError('Unknown column: {0}'.format(name))
+
+    return names
+
+
+if __name__ == '__main__':
+    columns_help = ', '.join(sorted(COLUMN_HEADERS.keys()))
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('directories', nargs='*', metavar='directory', help='Cache databases to include (default is all)')
+    parser.add_argument('--columns', type=parse_columns, default=DEFAULT_COLUMNS, help='comma-separated list of columns ({0})'.format(columns_help))
+    parser.add_argument('--hostname', default='localhost', help='Cache hostname')
+    parser.add_argument('--port', type=int, default=1972, help='Cache port')
+    parser.add_argument('--namespace', default='%SYS', help='Cache namespace')
+    parser.add_argument('--username', required=True, help='Cache username')
+    parser.add_argument('--password', required=True, help='Cache password')
+    parser.add_argument('--headers', dest='headers', action='store_true', help='show headers')
+    parser.add_argument('--no-headers', dest='headers', action='store_false', help='hide headers')
+    parser.set_defaults(headers=True)
+    args = parser.parse_args()
+
+    connection_string = '{hostname}[{port}]:{namespace}'.format(
+        hostname=args.hostname,
+        port=args.port,
+        namespace=args.namespace,
+    )
+
+    # Connect to Cache
+    connection = intersys.pythonbind.connection()
+    connection.connect_now(connection_string, args.username, args.password, None)
+    cache = intersys.pythonbind.database(connection)
+
+    columns = args.columns
+    directories = args.directories
+
+    if not directories:
+        directories = sorted(list_databases(cache))
+
+    if args.headers:
+        max_widths = [len(COLUMN_HEADERS[name]) for name in columns]
+    else:
+        max_widths = [0] * len(columns)
+
+    rows = []
+
+    # Gather data
+    for directory in directories:
+        database = Database(cache, directory)
+        database = DatabaseProxy(database)
+
+        row = []
+
+        for i, name in enumerate(columns):
+            value = str(getattr(database, name))
+            width = len(value)
+
+            if width > max_widths[i]:
+                max_widths[i] = width
+
+            row.append(value)
+
+        rows.append(row)
+
+    # Print headers if enabled
+    if args.headers:
+        for name, width in zip(columns, max_widths):
+            heading = COLUMN_HEADERS[name]
+            print(heading.ljust(width), end=' ')
+
+        print()
+
+    # Print data
+    for row in rows:
+        for name, value, width in zip(columns, row, max_widths):
+            left = name in LEFT_COLUMNS
+
+            if left:
+                print(value.ljust(width), end=' ')
+            else:
+                print(value.rjust(width), end=' ')
+
+        print()
