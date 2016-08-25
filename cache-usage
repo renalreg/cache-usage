@@ -176,7 +176,7 @@ def parse_columns(value):
 
     for name in names:
         if name not in COLUMN_HEADERS:
-            raise argparse.ArgumentError('Unknown column: {0}'.format(name))
+            raise argparse.ArgumentTypeError('Unknown column: {0}'.format(name))
 
     return names
 
