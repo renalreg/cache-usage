@@ -38,3 +38,9 @@ RHEL 6 has Python 2.6 installed by default so we use `scl` to run the script wit
 The `LD_LIBRARY_PATH` is updated so `libcbind.so` is on the path.
 The `--username` and `--password` arguments are provided for convenience.
 The alias assumes the `cache-usage` command is on the PATH (e.g. `/usr/local/bin`).
+
+## License
+
+Copyright (c) 2016 UK Renal Registry.
+
+Licensed under the [MIT](LICENSE.txt) license.
